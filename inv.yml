@@ -1,0 +1,53 @@
+all:
+  vars:
+    user: ec2-user
+    postgresql_primary_host: 172.31.62.154 
+    postgresql_standby_host: 172.31.56.166
+    postgresql_port: 5433
+    postgres_db: netbox
+    postgres_user: netbox
+    postgresql_db: postgres 
+    postgresql_user: postgres 
+    postgresql_password: aissa123
+    pgpool_host: 54.166.66.43 
+    replication_directory: replication/01
+    postgresql_netbox_port: 9999
+    netbox_host: 3.93.246.146
+    netbox_version: 3.5.6
+    allowed_hosts:
+      - '*'
+    django_superuser_name: yaya
+    django_superuser_email: ihope.123@gmail.com
+    django_superuser_password: aissaz12345678999
+    host_connections:
+      type: host
+      databases:
+        - all
+        - replication
+      user: all
+      address: all
+      method: trust
+
+
+primary_nodes:
+  hosts:
+    primary:
+      ansible_host: 54.160.112.220
+
+standby_nodes:
+  hosts:
+    standby1:
+      ansible_host: 100.26.153.86
+      slot_name: standby_one
+
+pgpool1:
+  hosts:
+    pgpool:
+      ansible_host: 54.166.66.43
+
+
+netbox1:
+  hosts:
+    netbox:
+      ansible_host: 3.93.246.146
+      ansible_user: "{{ user }}"
