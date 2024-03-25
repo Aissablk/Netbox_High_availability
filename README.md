@@ -60,6 +60,7 @@ The playbook is divided into multiple plays, each responsible for specific tasks
     ```bash
     ansible-playbook -i inv.yml play.yml 
     ```
+5. **testing**: put this adress on ur browser https://IP_ADRESS_NETBOX_VM:443 
 
 
 

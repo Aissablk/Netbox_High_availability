@@ -9,20 +9,17 @@
       become: true
       command: dnf module -y install postgresql:15/server
       tags: install_postgresql
-
     - name: Delete postgres user
       user:
         name: postgres 
         state: absent
       tags: delete_user_postgres
-
     - name: create user
       become: yes
-      ansible.builtin.user:
+      ansible.builtin.user: 
         name: postgres
         state: present 
       tags: create_user
-
     - name: create .ssh
       become: true
       ansible.builtin.file:
@@ -31,7 +28,6 @@
         owner: postgres
         mode : "700"
       tags: ssh_key
-
     - name: copy ssh key
       become: true
       ansible.builtin.copy:
@@ -40,7 +36,6 @@
         owner: postgres
         mode: "600"
       tags: ssh_key
-
     - name: Change ownership of /var/run/postgresql/
       become: true
       file:
@@ -49,11 +44,6 @@
         group: postgres
         recurse: yes
       tags: change_owner
-
-
-
-
-
     - name: Create Directory for replication
       tags:
         - prepare_replication_environment
@@ -64,41 +54,19 @@
         state: directory
         owner: postgres
         group: postgres
-
-
-
-
-
-
-
-
-
-
-
 - name: Create Postgresql Cluster
   hosts: primary_nodes
   gather_facts: false
   remote_user: postgres
 
   tasks:
-
-
-
-#     # - name: Check if data directory exists
-#     #   stat:
-#     #     path: "/pgsql/{{ replication_directory }}"
-#     #   register: data_dir
-
-
     - name: Initialise Postgresql Cluster
       tags:
         - configure_primary_nodes
         - initialise_cluster
+        - init_db_primary_node 
       ansible.builtin.shell: |
         initdb -D /pgsql/{{ replication_directory }}
-
-
-
     - name: Configure ports and hosts
       tags:
         - configure_primary_nodes
@@ -108,9 +76,6 @@
         path: "/pgsql/{{ replication_directory }}/postgresql.conf"
         regexp: "^#listen_addresses.*"
         line: "listen_addresses = '*'"
-
-
-
     - name: Configure ports and hosts
       tags:
         - configure_primary_nodes
@@ -120,9 +85,6 @@
         path: "/pgsql/{{ replication_directory }}/postgresql.conf"
         regexp: "^#port.*"
         line: "port = {{ postgresql_port }}"
-
-
-
     - name: Configure host based connections
       tags:
         - configure_primary_nodes
@@ -132,56 +94,23 @@
         path: "/pgsql/{{ replication_directory }}/pg_hba.conf"
         line: "{{ host_connections.type }}\t{{ item }}\t{{ host_connections.user }}\t{{ host_connections.address }}\t\t{{ host_connections.method }}"
       loop: "{{ host_connections.databases }}"
-
-
-#     # - name: Get PostgreSQL status
-#     #   become: true
-#     #   become_user: postgres
-#     #   ansible.builtin.shell:
-#     #     /usr/lib/postgresql/{{postgresql_version}}/bin/pg_ctl  status -D /pgsql/{{ replication_directory }}
-#     #   register: pg_status
-#     #   ignore_errors: true
-
     - name: Restart Postgresql Server on the created cluster
       tags:
-        - configure_primary_nodes
+        - configure_primary_nodes 
         - initialise_cluster
-        - restart_postgresql_server22
+        - restart_postgresql_server
       ansible.builtin.shell:
         pg_ctl -D /pgsql/{{ replication_directory }} start
-
-
-#     # - name: Create Postgresql Database for replication
-#     #   tags:
-#     #     - configure_primary_nodes
-#     #     - create_database
-#     #   ansible.builtin.shell: |
-#     #     psql --port=5433 << EOF
-#     #     CREATE DATABASE {{ postgresql_db }};
-#     #     CREATE USER {{ postgresql_user }} REPLICATION LOGIN PASSWORD '{{ postgresql_password }}';
-#     #     ALTER DATABASE {{ postgresql_db }} OWNER TO {{ postgresql_user }};
-#     #     \connect {{ postgresql_db }};
-#     #     GRANT CREATE ON SCHEMA public TO {{ postgresql_user }};
-#     #     EOF
-
-
-# Configure the stand by node
 - name: Postgresql StandBy nodes configuration
   hosts: standby_nodes
   remote_user: postgres
   gather_facts: false
   tasks:
-    # - name: Check if standby data directory exists
-    #   stat:
-    #     path: "/pgsql/{{ replication_directory }}"
-    #   register: standby_data_dir
-    #   tags:
-    #     - configure_standby_nodes
 
     - name: Initialise replication with primary node
       tags:
         - configure_standby_nodes
-        - initialise_replication22
+        - initialise_replication 
       ansible.builtin.shell:
         pg_basebackup
         -D /pgsql/{{ replication_directory }}
@@ -189,26 +118,12 @@
         -p {{ postgresql_port }}
         -U {{ postgresql_user }} -w
         -S {{ slot_name }} -C -R
-
-
-
-    # - name: Get standby PostgreSQL status
-    #   become: true
-    #   become_user: postgres
-    #   ansible.builtin.shell:
-    #     /usr/lib/postgresql/{{postgresql_version}}/bin/pg_ctl status -D /pgsql/{{ replication_directory }}
-    #   register: standby_pg_status
-    #   ignore_errors: true
-
     - name: Restart Postgresql Server on the created replica
       tags:
         - configure_standby_nodes
-        - initialise_cluster44
+        - initialise_cluster
       ansible.builtin.shell:
         pg_ctl -D /pgsql/{{ replication_directory }} start
-
-
-
 - name: pgpool installation
   hosts: pgpool1
   gather_facts: false
@@ -220,27 +135,25 @@
       ansible.builtin.yum:
         name: wget
         state: present
-
-    - name: download the link
+      tags: 
+        - install_pgpool
+        - install wget package  
+    - name: Download the link
       command: wget https://www.pgpool.net/mediawiki/download.php?f=pgpool-II-4.4.5.tar.gz
       tags:
         - downloads_link
         - install_pgpool
-
-
     - name: extract link
       command: sudo tar xf download.php?f=pgpool-II-4.4.5.tar.gz
       tags:
         - extract_link
-
+        - install_pgpool 
     - name: Update the memory cache
       tags:
-        - install_redis
-        - create_netbox_database
+        - update_memory_cache  
       become: true
       ansible.builtin.yum:
         update_cache: yes
-
     - name: Install compilation tools
       yum:
         name:
@@ -252,39 +165,33 @@
       tags:
         - install compilation tools
         - install_pgpool
-
-
     - name: Install libpq-dev
       yum:
         name: postgresql-devel
         state: present
       tags:
         - install libpq-dev 
-
-    - name: running sudo ./configure dans pgpool-II-4.4.5/
+    - name: Running sudo ./configure dans pgpool-II-4.4.5/
       command: sudo ./configure
       args:
         chdir: pgpool-II-4.4.5/
       tags:
         - running sudo ./configure dans pgpool-II-4.4.5/
         - install_pgpool
-
-    - name:  software compilation
+    - name:  Software compilation
       command: sudo make
       args:
         chdir: pgpool-II-4.4.5/
       tags:
         - software compilation
         - install_pgpool
-
-    - name:  installs the compiled software into the system
+    - name:  Installs the compiled software into the system
       command: sudo make install
       args:
         chdir: pgpool-II-4.4.5/
       tags:
          - installs the compiled software into the system
          - install_pgpool
-
     - name: Copy pgpool.conf.sample to pgpool.conf
       command: sudo cp pgpool.conf.sample pgpool.conf
       args:
@@ -292,7 +199,6 @@
       tags:
          - Copy_file
          - install_pgpool
-
     - name: Copy pgpool.failover.sh.sample to failover.sh
       command: sudo cp failover.sh.sample failover.sh
       args:
@@ -300,26 +206,23 @@
       tags:
         - Copy_file
         - install_pgpool
-
+        
     - name: Copy pool_hba.conf
       command: sudo cp pool_hba.conf.sample pool_hba.conf
       args:
         chdir: /usr/local/etc/
       tags:
-        - Copy_file
-        - install_pgpool
-
+        - Copy_file 
+        - install_pgpool 
+       
     - name: Configure pool_hba.conf
       tags:
-        - configure_primary_nodes
-        - code
-        - configure_host_based_connections
+        - configure_primary_nodes 
+        - configure_host_based_connections 
       ansible.builtin.lineinfile:
         path: "/usr/local/etc/pool_hba.conf"
         line: "{{ host_connections.type }}\t{{ item }}\t{{ host_connections.user }}\t{{ host_connections.address }}\t\t{{ host_connections.method }}"
       loop: "{{ host_connections.databases }}"
-
-
     - name: Install PostgreSQL 15 Server
       become: true
       command: dnf module -y install postgresql:15/server
@@ -329,15 +232,17 @@
       user:
         name: postgres
         state: absent
-      tags: delete_user_postgres1
-
-    - name: create user
+      tags: 
+        - delete_user_postgres
+        - install_postgresql
+    - name: Create user
       become: yes
       ansible.builtin.user:
         name: postgres
         state: present
-      tags: create_user1
-
+      tags: 
+        - delete_user_postgres 
+        - install_postgresql
     - name: create .ssh
       become: true
       ansible.builtin.file:
@@ -346,9 +251,8 @@
         owner: postgres
         group: postgres
         mode : "700" 
-      tags: gene_rate1
-
-    - name: genereate ssh key1
+      tags: generate_ssh_key
+    - name: Genereate ssh key1
       openssh_keypair:
         path: /home/postgres/.ssh/id_rsa
         state: present
@@ -356,62 +260,46 @@
         size: 2048
         owner: postgres
         force: yes
-      tags: gene_rate
-
+      tags: generate_ssh_key
     - name: Change the owner of the pgpool-II-4.4.5 directory
       ansible.builtin.command: sudo chown -R "{{user}}":"{{user}}" /home/"{{user}}"/pgpool-II-4.4.5/
       tags: chown_pgpool_files
-
     - name: Change the owner of the main pgpool executable binary
       ansible.builtin.command: sudo chown -R "{{user}}":"{{user}}" /usr/local/bin/pgpool
       tags: chown_pgpool_files
-
     - name: Change the owner of the pgpool directory of the configuration files
       ansible.builtin.command: sudo chown -R "{{user}}":"{{user}}" /usr/local/etc/
       tags: chown_pgpool_files
-
     - name: Change the owner of the share directory
       ansible.builtin.command: sudo chown -R "{{user}}":"{{user}}"  /usr/local/share/
       tags: chown_pgpool_files
-
     - name: Change the owner of postgresql
       ansible.builtin.command: sudo chown -R "{{user}}":"{{user}}" /var/run/postgresql/
       tags: chown_pgpool_files
-
     - name: giving permissions of the script file
       ansible.builtin.command: chmod a+wx /usr/local/etc/failover.sh
       tags: chmod_pgpool_files
-
     - name: giving permissions of the pgpool configurations file
       ansible.builtin.command: chmod a+wx /usr/local/etc/pgpool.conf
       tags: chmod_pgpool_files
-
     - name: giving permissions of pool_hba file
       ansible.builtin.command: chmod a+wx /usr/local/etc/pool_hba.conf
       tags: chmod_pgpool_files
-
-
 #"pgpool.conf configuration "
-    - name: Copy configuration.py template
-
+    - name: Copy pgpool.conf.j2 template
       become: true
       ansible.builtin.template:
         src: pgpool.conf.j2
         dest: "/usr/local/etc/pgpool.conf"
-
-
+      tags: copy_pgpool.conf 
 
 #"failover.sh configuration"
     - name: Copy configuration.py template failover.sh
-
       become: true
       ansible.builtin.template:
         src: failover.sh.j2
         dest: "/usr/local/etc/failover.sh"
-
-
-
-
+      tags: copy_failover_sh 
 #setup passwordSSH
     - name: Create .ssh directory for Postgres
       file:
@@ -421,8 +309,6 @@
         group: postgres
         mode: '0700'
       tags: password_SSH
-
-
     - name: genereate ssh key
       openssh_keypair:
         path: /home/{{user}}/.ssh/id_rsa
@@ -433,29 +319,23 @@
       tags:
         - generate_ssh1
         - password_SSH89
-
     - name: geeting_public_key
       fetch:
         src: '/home/{{user}}/.ssh/id_rsa.pub'
         dest: ~/
         flat: yes
       tags:
-        - geeting_public_key
-        - password_SSH89
-
+        - get_local_key 
+        - password_SSH
     - name: geeting_public_key
       fetch:
         src: '/home/postgres/.ssh/id_rsa.pub'
         dest: /tmp/postgres_id_rsa.pub
         flat: yes
       tags:
-        - geeting_public_key55
-        - password_SSH89
-
-
-
+        - get_local_key 
+        - password_SSH
 #"{{user}}" to "{{user}}"
-
 - name: Copy public key to primary and standby
   hosts:  standby_nodes
   remote_user: "{{user}}"
@@ -468,10 +348,8 @@
       delegate_to: localhost
       run_once: true
       tags:
-        - password_SSH89
-
-
-
+        - password_SSH
+        - get_local_key
     - name: Insert public key to authorized_keys
       blockinfile:
         path: "~/.ssh/authorized_keys"
@@ -483,7 +361,7 @@
         insertbefore: EOF
 
       tags:
-        - password_SSH89
+        - password_SSH
         - Insert public key to authorized_keys
 #"{{user}}" to postgres
 
@@ -496,9 +374,9 @@
         path: ~/id_rsa.pub
       register: public_key
       delegate_to: localhost
-      run_once: true
+      run_once: true 
       tags:
-        - password_SSH89
+        - password_SSH
         - Get local public key
 
     - name: Insert public key to authorized_keys
@@ -512,10 +390,8 @@
         insertbefore: EOF
 
       tags:
-        - password_SSH89
+        - password_SSH
         - Insert public key to authorized_keys
-
-
 - name: Copy public from pgpool to standby
   hosts:  standby_nodes
   remote_user: postgres
@@ -527,7 +403,7 @@
       delegate_to: localhost
       run_once: true
 
-      tags: password_SSH89
+      tags: password_SSH
 
     - name: Insert public key to authorized_keys
       blockinfile:
@@ -541,22 +417,19 @@
 
       tags:
 
-        - password_SSH89
-
+        - password_SSH
 - name: running pgool
   hosts: pgpool1
   gather_facts: false
   remote_user: "{{user}}"
   tasks:
-    - name: running pgpool
+    - name: Running pgpool
       shell: pgpool -n > /dev/null 2>&1 &
       async: 300
       poll: 0    
       tags:
-        - password_SSH89
+        - run_pgpool 
       register: pgpool_result
-
-
     - name: Run SQL script to create role, database, and set permissions
       ansible.builtin.shell: |
         psql -U postgres -p 9999 <<EOF
@@ -565,10 +438,7 @@
         GRANT ALL PRIVILEGES ON DATABASE netbox TO netbox;
         ALTER ROLE netbox WITH SUPERUSER CREATEDB CREATEROLE REPLICATION BYPASSRLS;
         EOF
-      tags: run_upgrade_script1
-
-
-
+      tags: run_sql_script
 - name: Install, Configure system packages and Database Manageement systems for Netbox
   gather_facts: false
   become: true
@@ -590,62 +460,56 @@
         - python38-pip
         - python3-virtualenv
         - python38-devel
-
+      tags: install_packages 
     - name: Downloads repo Postgresql
       dnf:
         name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm
         state: present
-        disable_gpg_check: yes
-
+        disable_gpg_check: yes 
+      tags: downloads_postgresql
     - name: Disable the PostgreSQL module
       ansible.builtin.command:
         cmd: dnf -qy module disable postgresql
       become: yes
-
+      tags: 
+        - disable_modules 
+        - downloads_postgresql 
     - name: downloads PostgreSQL
       dnf:
         name: postgresql13-server
         state: present
-
     - name: init postgresql
       command: sudo postgresql-13-setup initdb
+      tags: init_db
       tags: check_it
-
-
     - name: Copy pg_hba template
       tags:
         - copy_pghba
-
       become: true
       ansible.builtin.template: 
         src: pg_hba.conf.j2
         dest: "/var/lib/pgsql/13/data/pg_hba.conf"
-
-
     - name: activate PostgreSQL-13 service
       systemd:
         name: postgresql-13
         enabled: yes
         masked: no
+      tags: activate_and_run_postgresql 
       tags: runn_psql
-
-    - name: update system
+    - name: update system 
       command: sudo yum update -y --nobest
+      tags: update_system
       tags: ypdate
-
-
-
-
     - name: activate and run Postgresql service 
       systemd:
         name: postgresql-13
         state: started
         enabled: yes
-      tags: runn_psqlaissa
+      tags: activate_and_run_postgresql 
 
     - name: Create Postgres Database for Netbox
       tags:
-        - runn_psqlaissa
+        - Create_database
       ansible.builtin.shell: |
         sudo -u postgres psql << EOF
         CREATE DATABASE {{ postgres_db }};
@@ -655,42 +519,36 @@
         \connect {{ postgres_db }};
         GRANT CREATE ON SCHEMA public TO {{ postgres_user }};
         EOF
-
-
     - name: Install Redis
       tags:
-        - runn_psqlaissa
-        - create_netbox_database
-      become: true
+        
+        - install_redis 
+      become: true 
       ansible.builtin.yum:
         name: redis
         state: latest
-
     - name: Restart Redis Server
       tags:
-        - install_redis
-        - runn_psqlaissa
-        - create_netbox_database
+        - install_redis 
+        
       become: true
       ansible.builtin.service:
         name: redis
-        state: restarted
-        enabled: true
-
+        state: restarted 
+        enabled: true 
     - name: Download the Netbox Archive
       tags:
         - download_netbox
-        - runn_psqlaissa
+       
       become: true
       ansible.builtin.get_url:
         url: "https://github.com/netbox-community/netbox/archive/refs/tags/v{{ netbox_version }}.tar.gz"
         dest: "/opt/v{{ netbox_version }}.tar.gz"
-
     - name: Extract Netbox archive
       tags:
         - extract_netbox_archive
         - download_netbox
-        - runn_psqlaissa
+        - Create_user_netbox 
       become: true
       ansible.builtin.unarchive:
         src: "/opt/v{{ netbox_version }}.tar.gz"
@@ -699,72 +557,66 @@
     - name: Create symbolic link
       tags:
         - create_symbolic_link
-        - download_netbox
-        - runn_psqlaissa
+        - Create_user_netbox 
+       
       become: true
       ansible.builtin.file:
         src: "/opt/netbox-{{ netbox_version }}"
         dest: /opt/netbox
         state: link
         force: true
-
-
     - name: Create system group netbox
       group:
         name: netbox
         system: yes
-      tags: runn_psqlaissa
-
+      tags: Create_user_netbox 
     - name: Create user system group netbox  
-      user:
+      user: 
         name: netbox
         system: yes
         group: netbox
-      tags: runn_psqlaissa
+      tags: Create_user_netbox
 
     - name: giving the right permissions for /opt/netbox/netbox/media/
       file:
         path: /opt/netbox/netbox/media/
         owner: netbox
         recurse: yes
-      tags: runn_psqlaissa
+      tags: giving_permissions
 
     - name: giving the right permissions for  /opt/netbox/netbox/reports/
       file: 
         path: /opt/netbox/netbox/reports/
         owner: netbox
         recurse: yes
-      tags: runn_psqlaissa
+      tags: giving_permissions
 
     - name: giving the right permissions /opt/netbox/netbox/scripts/
       file:
         path: /opt/netbox/netbox/scripts/
         owner: netbox
         recurse: yes
-      tags: runn_psqlaissa
+      tags: giving_permissions
 
 
     - name: Generate Secret key
       tags:
         - configure_netbox
-        - runn_psqlaissa
-        - create_netbox_database
+        - generate_netbox_secret_key 
       become: true
       ansible.builtin.command:
         python3 /opt/netbox/netbox/generate_secret_key.py
       register: secret_key
     - name: Get Netbox Secret key
       tags:
-        - configure_netbox
-        - runn_psqlaissa
-        - create_netbox_database
+        - configure_netbox 
+        - generate_netbox_secret_key 
       ansible.builtin.set_fact:
         netbox_secret_key: "{{ secret_key.stdout_lines[0] }}"
     - name: Copy configuration file
       tags:
         - copy_configuration_file
-        - runn_psqlaissa
-        - create_netbox_database
+        
       become: true
       ansible.builtin.copy:
         src: /opt/netbox/netbox/netbox/configuration_example.py
@@ -773,8 +625,8 @@
 
     - name: Copy configuration.py template
       tags:
-        - runn_psqlaissa
-        - create_netbox_database
+        - runn_netBox_script 
+       
       become: true
       ansible.builtin.template:
         src: custom_settings.j2
@@ -782,7 +634,7 @@
 
     - name: Run NetBox upgrade script with Python 3.8
       tags:
-        - runn_psqlaissa
+        - runn_netBox_script 
       ansible.builtin.shell:
         cmd: sudo PYTHON=/usr/bin/python3.8 ./upgrade.sh
         chdir: /opt/netbox/
@@ -791,7 +643,6 @@
     - name: Créer Django Super 1user pour Netbox
       tags:
         - create_super_user
-        - runn_psqlaissa123
         - create_netbox_database2
       become: true
       ansible.builtin.shell: |
@@ -800,18 +651,14 @@
         DJANGO_SUPERUSER_PASSWORD={{ django_superuser_password }} \
         python3 manage.py createsuperuser --username {{ django_superuser_name }} --email {{ django_superuser_email }} --noinput
 
-
-
     - name: Install NGINX
       command: yum -y install nginx 
-      tags: aissa_moc
-
-
+      tags: install_ngnix 
     - name: Copy gunicorn configuration file
       tags:
         - copy_gunicorn_configuration
-        - run_upgrade_script111
-        - create_netbox_database23
+        - configure_ginucorn
+        
       become: true
       ansible.builtin.copy:
         src: /opt/netbox/contrib/gunicorn.py
@@ -819,25 +666,21 @@
         remote_src: true
         mode: '0644'
 
-
     - name: Find Netbox and Gunicorn service files
       tags:
         - setup_systemd
-        - run_upgrade_script111
-        - create_netbox_database23
+        - configure_ginucorn 
       become: true
       ansible.builtin.find:
         path: /opt/netbox/contrib
         patterns:
           - "*.service"
       register: netbox_service_files
-
-
     - name: Setup systemd for Netbox
       tags:
         - setup_systemd
-        - run_upgrade_script111
-        - create_netbox_database23
+        - configure_ginucorn
+        
       become: true
       ansible.builtin.copy:
         src: "{{ item.path }}"
@@ -848,8 +691,6 @@
     - name: Start NetBox and NetBox RQ services
       tags:
         - start_netbox_service
-        - create_netbox_database23
-        - - run_upgrade_script1112
       become: true
       ansible.builtin.service:
         name: "{{ item }}"
@@ -858,8 +699,6 @@
       with_items: 
         - netbox
         - netbox-rq
-
-
     - name: Create SSL private directory
       file:
         path: /etc/ssl/private
@@ -891,7 +730,7 @@
     - name: Create Openssl Certificate
       tags:
         - create_openssl_certificate
-        - setup_http_server1
+        - setup_http_server
       become: true
       community.crypto.x509_certificate:
         privatekey_path: /etc/ssl/private/netbox.key
@@ -901,28 +740,28 @@
         csr_path: /etc/ssl/certs/netbox.csr
     - name: Copy netbox.conf.j2 template
       tags: 
-        - runn_psqlaissaoo
-        - create_netbox_database
+        - copy_ngnix
+        - ngix_configure
       become: true
       ansible.builtin.template:
         src:  netbox.conf.j2
-        dest: "/etc/nginx/conf.d/netbox.conf"
+        dest: "/etc/nginx/conf.d/netbox.conf" 
 
-    - name: copy nginx.conf.j2 template
+    - name: Copy nginx.conf.j2 template
       tags:
-        - runn_psqlaissaoo
-        - create_netbox_database
+        - copy_ngnix
+        - ngix_configure
       become: true
       ansible.builtin.template:
         src:   nginx.conf.j2
         dest: "/etc/nginx/nginx.conf" 
 
-    - name: run setsebool command 
+    - name: Run setsebool command 
       command: sudo setsebool -P httpd_can_network_connect 1
-      tags: aissa_moc22
+      tags: setsebool_command
 
 
-    - name: restart all services 
+    - name: Restart all services 
       command: sudo systemctl restart netbox netbox-rq nginx postgresql-13
       tags: resatrt_all
 
